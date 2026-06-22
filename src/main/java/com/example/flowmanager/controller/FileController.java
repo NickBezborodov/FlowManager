@@ -31,16 +31,15 @@ public class FileController {
         }
 
         try {
-            // Создаем директорию, если она не существует
             File uploadDir = new File(UPLOAD_DIRECTORY);
             if (!uploadDir.exists()) {
                 uploadDir.mkdirs();
             }
 
-            // Полный путь к сохраняемому файлу
+
             Path filePath = Paths.get(UPLOAD_DIRECTORY + File.separator + Objects.requireNonNull(file.getOriginalFilename()));
 
-            // Копируем содержимое файла
+
             Files.copy(file.getInputStream(), filePath);
             return ResponseEntity.ok("Файл успешно загружен: " + file.getOriginalFilename());
         } catch (IOException e) {
