@@ -55,8 +55,8 @@ spring:
 app:
   kafka:
     topics:
-      file-uploaded: file-uploaded        # FlowManager -> ConversionService
-      file-converted: file-converted      # ConversionService -> FlowManager
+      file-uploaded: file-converter-input        # FlowManager -> ConversionService
+      file-converted: file-converter-output      # ConversionService -> FlowManager
   minio:
     url: http://localhost:9000
     access-key: minioadmin

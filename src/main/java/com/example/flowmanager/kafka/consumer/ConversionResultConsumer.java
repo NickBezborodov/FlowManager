@@ -16,7 +16,7 @@ public class ConversionResultConsumer {
     private final FileService fileService;
     private final ObjectMapper objectMapper;
 
-    @KafkaListener(topics = "${app.kafka.topics.uploaded}", groupId = "flowmanager-group")
+    @KafkaListener(topics = "${app.kafka.topics.request}", groupId = "${app.kafka.consumer.group-id}")
     public void listen(String message) {
         log.info("Received result message: {}", message);
         try {
