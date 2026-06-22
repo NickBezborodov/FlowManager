@@ -21,7 +21,7 @@ import java.util.Objects;
 @RequestMapping("/api/files")
 @RequiredArgsConstructor
 public class FileController {
-    private static final String UPLOAD_DIRECTORY = ;
+    private static final String UPLOAD_DIRECTORY = "/upload";
     private final FileService FileService;
 
     @PostMapping("/upload")
