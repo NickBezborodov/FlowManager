@@ -29,6 +29,7 @@ public class FileRecord {
     private FileStatus status;
 
     private LocalDateTime createdAt;
+    private LocalDateTime updateAt;
 
     @Column(nullable = false)
     private Long size;

@@ -1,17 +1,19 @@
 package com.example.flowmanager.service.impl;
 
 import com.example.flowmanager.dao.FileRecordRepository;
+import com.example.flowmanager.dao.OutboxEventRepository;
 import com.example.flowmanager.dto.ConversionRequestEvent;
 import com.example.flowmanager.dto.ConversionResultEvent;
 import com.example.flowmanager.dto.FileStatusResponse;
 import com.example.flowmanager.dto.FileUploadResponse;
 import com.example.flowmanager.entity.FileRecord;
+import com.example.flowmanager.entity.outbox.OutboxEvent;
 import com.example.flowmanager.enums.FileStatus;
+import com.example.flowmanager.enums.OutboxStatus;
 import com.example.flowmanager.exception.FileStorageException;
-import com.example.flowmanager.kafka.producer.ConversionRequestProducer;
 import com.example.flowmanager.service.FileService;
 import com.example.flowmanager.service.MinioService;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,11 +30,16 @@ import java.util.UUID;
 public class FileServiceImpl implements FileService {
     private final FileRecordRepository fileRecordRepository;
     private final MinioService minioService;
-    private final ConversionRequestProducer producer;
+    private final ObjectMapper objectMapper;
+    private final OutboxEventRepository outboxEventRepository;
 
     @Transactional
     @Override
     public FileUploadResponse upload(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("File is empty");
+        }
+
         String format = extractFormat(file.getOriginalFilename());
 
         byte[] content;
@@ -50,17 +57,36 @@ public class FileServiceImpl implements FileService {
         record.setStatus(FileStatus.PROCESSING);
         record.setCreatedAt(LocalDateTime.now());
         record.setSize(file.getSize());
+        record.setUpdateAt(LocalDateTime.now());
 
         FileRecord savedRecord = fileRecordRepository.save(record);
 
         try {
-            producer.sendMessage(new ConversionRequestEvent(savedRecord.getId(), path, format));
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize event", e);
+            ConversionRequestEvent event = new ConversionRequestEvent(
+                    savedRecord.getId(),
+                    path,
+                    format
+            );
+            String payload = objectMapper.writeValueAsString(event);
+            OutboxEvent outboxEvent = new OutboxEvent();
+            outboxEvent.setAggregateId(savedRecord.getId());
+            outboxEvent.setEventType("CONVERSION_REQUEST");
+            outboxEvent.setPayload(payload);
+            outboxEvent.setStatus(OutboxStatus.PENDING);
+            outboxEvent.setCreatedAt(LocalDateTime.now());
+            outboxEvent.setRetryCount(0);
+
+            outboxEventRepository.save(outboxEvent);
+            log.info("Outbox event saved for file: {}", savedRecord.getId());
+
+        } catch (Exception e) {
+            log.error("Failed to save outbox event", e);
             throw new FileStorageException("Failed to queue file", e);
         }
-        return new FileUploadResponse(record.getId(), record.getStatus());
+
+        return new FileUploadResponse(savedRecord.getId(), savedRecord.getStatus());
     }
+
 
     private String extractFormat(String fileName) {
         if (fileName == null || !fileName.contains(".")) {
