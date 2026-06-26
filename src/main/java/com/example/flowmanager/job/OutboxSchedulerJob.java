@@ -6,6 +6,7 @@ import com.example.flowmanager.dao.OutboxEventRepository;
 import com.example.flowmanager.service.OutboxProcessorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -28,12 +29,16 @@ public class OutboxSchedulerJob {
     private static final int RETRY_DELAY_MINUTES = 3;
 
     @Scheduled(fixedDelay = 5000)
+    @SchedulerLock(
+            name = "processNewEvents",
+            lockAtMostFor = "30s",
+            lockAtLeastFor = "5s"
+    )
     @Transactional
     public void processNewEvents() {
         log.debug("🔄 Running processNewEvents scheduler...");
 
         Pageable pageable = PageRequest.of(0, BATCH_SIZE);
-
         Page<OutboxEvent> page = outboxRepository
                 .findByStatusAndCreatedAtBefore(
                         OutboxStatus.PENDING,
@@ -53,6 +58,11 @@ public class OutboxSchedulerJob {
     }
 
     @Scheduled(fixedDelay = 60000)
+    @SchedulerLock(
+            name = "retryFailedEvents",
+            lockAtMostFor = "2m",
+            lockAtLeastFor = "30s"
+    )
     @Transactional
     public void retryFailedEvents() {
         log.debug("🔄 Running retryFailedEvents scheduler...");
