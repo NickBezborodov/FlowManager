@@ -1,50 +1,48 @@
 package com.example.flowmanager.controller;
 
+import com.example.flowmanager.dto.FileStatusResponse;
+import com.example.flowmanager.dto.FileUploadResponse;
 import com.example.flowmanager.service.FileService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Objects;
+import java.util.UUID;
 
+@Slf4j
 @RestController
-@RequestMapping("/api/files")
+@RequestMapping("/api/v1/files")
 @RequiredArgsConstructor
 public class FileController {
-    private static final String UPLOAD_DIRECTORY = "/upload";
-    private final FileService FileService;
+    private final FileService fileService;
 
     @PostMapping("/upload")
-    public ResponseEntity<String> uploadFile(@RequestParam("file") MultipartFile file) {
-        if (file.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Пожалуйста, выберите файл для загрузки.");
-        }
+    public ResponseEntity<FileUploadResponse> uploadFile(@RequestParam("file") MultipartFile file) {
+        log.info("\"Received file upload request: {}", file.getOriginalFilename());
 
-        try {
-            File uploadDir = new File(UPLOAD_DIRECTORY);
-            if (!uploadDir.exists()) {
-                uploadDir.mkdirs();
-            }
+        FileUploadResponse response = fileService.upload(file);
 
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
 
-            Path filePath = Paths.get(UPLOAD_DIRECTORY + File.separator + Objects.requireNonNull(file.getOriginalFilename()));
+    @GetMapping("/check/v1/{id}")
+    public FileStatusResponse getStatus(@PathVariable UUID id) {
+        return fileService.getStatus(id);
+    }
 
+    @GetMapping("/download/v1/{id}")
+    public ResponseEntity<byte[]> downloadFile(@PathVariable UUID id) {
+        byte[] fileData = fileService.getFile(id);
 
-            Files.copy(file.getInputStream(), filePath);
-            return ResponseEntity.ok("Файл успешно загружен: " + file.getOriginalFilename());
-        } catch (IOException e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Не удалось загрузить файл: " + file.getOriginalFilename());
-        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"file\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(fileData);
     }
 }

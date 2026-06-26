@@ -10,6 +10,7 @@ import com.example.flowmanager.entity.FileRecord;
 import com.example.flowmanager.entity.outbox.OutboxEvent;
 import com.example.flowmanager.enums.FileStatus;
 import com.example.flowmanager.enums.OutboxStatus;
+import com.example.flowmanager.exception.FileNotFoundException;
 import com.example.flowmanager.exception.FileStorageException;
 import com.example.flowmanager.service.FileService;
 import com.example.flowmanager.service.MinioService;
@@ -57,7 +58,7 @@ public class FileServiceImpl implements FileService {
         record.setStatus(FileStatus.PROCESSING);
         record.setCreatedAt(LocalDateTime.now());
         record.setSize(file.getSize());
-        record.setUpdateAt(LocalDateTime.now());
+        record.setUpdatedAt(LocalDateTime.now());
 
         FileRecord savedRecord = fileRecordRepository.save(record);
 
@@ -96,17 +97,49 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public FileStatusResponse getStatus(UUID id) {
-        return null;
+        try {
+            FileRecord record = fileRecordRepository.findById(id)
+                    .orElseThrow(() -> new FileNotFoundException("File not found with id: " + id));
+
+            return new FileStatusResponse(
+                    record.getId(),
+                    record.getStatus(),
+                    record.getFormat(),
+                    record.getCreatedAt()
+            );
+        } catch (Exception e) {
+            throw new FileNotFoundException("Failed to get file status for id: " + id, e);
+        }
     }
 
     @Override
     public byte[] getFile(UUID id) {
-        return new byte[0];
+        try {
+            FileRecord record = fileRecordRepository.findById(id)
+                    .orElseThrow(() -> new FileNotFoundException("File not found with id: " + id));
+
+            String originalPath = record.getOriginalPath();
+
+            return minioService.downloadFile(originalPath);
+        } catch (Exception e) {
+            throw new FileNotFoundException("Failed to get file status for id: " + id, e);
+        }
     }
 
     @Override
     public void handleConversionResult(ConversionResultEvent event) {
+        FileRecord record = fileRecordRepository.findById(event.getFileId())
+                .orElseThrow(() -> new FileNotFoundException("File not found"));
 
+        if (event.status() == FileStatus.SUCCESS) {
+            record.setStatus(FileStatus.SUCCESS);
+            record.setConvertedPath(event.resultPath());
+        } else {
+            record.setStatus(FileStatus.ERROR);
+        }
+
+        fileRecordRepository.save(record);
     }
 }

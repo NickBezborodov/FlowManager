@@ -1,5 +1,6 @@
 package com.example.flowmanager.entity.outbox;
 
+import com.example.flowmanager.entity.FileRecord;
 import com.example.flowmanager.enums.OutboxStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -55,5 +56,9 @@ public class OutboxEvent {
     public int hashCode() {
         return getClass().hashCode();
     }
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "aggregate_id", referencedColumnName = "id", insertable = false, updatable = false)
+    private FileRecord fileRecord;
 }
 
