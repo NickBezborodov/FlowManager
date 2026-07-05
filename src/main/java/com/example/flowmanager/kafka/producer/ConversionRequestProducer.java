@@ -14,7 +14,7 @@ public class ConversionRequestProducer {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
-    @Value("${app.kafka.topics.converted}")
+    @Value("${app.kafka.topics.request}")
     private String outputTopic;
 
     public void sendMessage(ConversionRequestEvent event) throws JsonProcessingException {

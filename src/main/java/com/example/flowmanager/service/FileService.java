@@ -8,7 +8,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.UUID;
 
 public interface FileService {
-    FileUploadResponse upload(MultipartFile file);
+    FileUploadResponse upload(MultipartFile file, String login);
     FileStatusResponse getStatus(UUID id);
     byte[] getFile(UUID id);
     void handleConversionResult(ConversionResultEvent event);

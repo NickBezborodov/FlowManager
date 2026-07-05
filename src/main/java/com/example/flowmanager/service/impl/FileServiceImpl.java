@@ -2,10 +2,7 @@ package com.example.flowmanager.service.impl;
 
 import com.example.flowmanager.dao.FileRecordRepository;
 import com.example.flowmanager.dao.OutboxEventRepository;
-import com.example.flowmanager.dto.ConversionRequestEvent;
-import com.example.flowmanager.dto.ConversionResultEvent;
-import com.example.flowmanager.dto.FileStatusResponse;
-import com.example.flowmanager.dto.FileUploadResponse;
+import com.example.flowmanager.dto.*;
 import com.example.flowmanager.entity.FileRecord;
 import com.example.flowmanager.entity.outbox.OutboxEvent;
 import com.example.flowmanager.enums.FileStatus;
@@ -14,6 +11,7 @@ import com.example.flowmanager.exception.FileNotFoundException;
 import com.example.flowmanager.exception.FileStorageException;
 import com.example.flowmanager.service.FileService;
 import com.example.flowmanager.service.MinioService;
+import com.example.flowmanager.service.SubscriptionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,11 +31,21 @@ public class FileServiceImpl implements FileService {
     private final MinioService minioService;
     private final ObjectMapper objectMapper;
     private final OutboxEventRepository outboxEventRepository;
+    private final SubscriptionService subscriptionService;
 
     @Transactional
     @Override
-    public FileUploadResponse upload(MultipartFile file) {
+    public FileUploadResponse upload(MultipartFile file, String login) {
         if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("File is empty");
+        }
+
+        SubscriptionDto subscription = subscriptionService.getSubscription(login);
+        long maxSize = "PAID".equals(subscription.type())
+                ? Long.MAX_VALUE
+                : 100L * 1024 * 1024; // ← 100 мб
+
+        if (file.isEmpty()) {
             throw new IllegalArgumentException("File is empty");
         }
 
@@ -63,12 +71,11 @@ public class FileServiceImpl implements FileService {
         FileRecord savedRecord = fileRecordRepository.save(record);
 
         try {
-            ConversionRequestEvent event = new ConversionRequestEvent(
-                    savedRecord.getId(),
-                    path,
-                    format
-            );
+            ConversionRequestEvent event = new ConversionRequestEvent(savedRecord.getId(), path, format);
             String payload = objectMapper.writeValueAsString(event);
+
+            log.info("📤 Sending payload to Kafka: {}", payload);
+
             OutboxEvent outboxEvent = new OutboxEvent();
             outboxEvent.setAggregateId(savedRecord.getId());
             outboxEvent.setEventType("CONVERSION_REQUEST");
@@ -130,16 +137,26 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public void handleConversionResult(ConversionResultEvent event) {
-        FileRecord record = fileRecordRepository.findById(event.getFileId())
-                .orElseThrow(() -> new FileNotFoundException("File not found"));
+        // 1. Проверяем fileId
+        if (event.fileId() == null) {
+            log.error("❌ ConversionResultEvent with null fileId: {}", event);
+            return; // или throw, но лучше просто логировать
+        }
 
+        // 2. Ищем файл
+        FileRecord record = fileRecordRepository.findById(event.fileId())
+                .orElseThrow(() -> new FileNotFoundException("File not found: " + event.fileId()));
+
+        // 3. Обновляем статус
         if (event.status() == FileStatus.SUCCESS) {
             record.setStatus(FileStatus.SUCCESS);
             record.setConvertedPath(event.resultPath());
         } else {
             record.setStatus(FileStatus.ERROR);
         }
+        record.setUpdatedAt(LocalDateTime.now());
 
+        // 4. Сохраняем
         fileRecordRepository.save(record);
     }
 }

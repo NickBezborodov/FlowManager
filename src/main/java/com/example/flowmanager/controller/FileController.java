@@ -22,10 +22,13 @@ public class FileController {
     private final FileService fileService;
 
     @PostMapping("/upload")
-    public ResponseEntity<FileUploadResponse> uploadFile(@RequestParam("file") MultipartFile file) {
-        log.info("\"Received file upload request: {}", file.getOriginalFilename());
+    public ResponseEntity<FileUploadResponse> uploadFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestHeader("X-User-Login") String login) {
 
-        FileUploadResponse response = fileService.upload(file);
+        log.info("Received file upload request: {}, user: {}", file.getOriginalFilename(), login);
+
+        FileUploadResponse response = fileService.upload(file, login);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }

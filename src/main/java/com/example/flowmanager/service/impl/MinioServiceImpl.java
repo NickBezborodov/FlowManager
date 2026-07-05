@@ -18,7 +18,7 @@ import java.util.UUID;
 public class MinioServiceImpl implements MinioService {
     private final MinioClient minioClient;
 
-    @Value("${minio.bucket}")
+    @Value("${app.minio.bucket}")
     private String bucketName;
 
     @Override

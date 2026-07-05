@@ -1,24 +1,43 @@
 spring:
+  main:
+    allow-circular-references: true
+
   application:
     name: flowmanager
 
   # --- База данных ---
   datasource:
-    url: jdbc:postgresql://localhost:5432/flowmanager
-    username: flowmanager
-    password: flowmanager
+    url: jdbc:postgresql://localhost:5432/postgres
+    username: postgres
+    password: postgres
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      ddl-auto: validate   # схему создаёт Liquibase, Hibernate её не трогает
+      ddl-auto: create   # схему создаёт Liquibase, Hibernate её не трогает
     open-in-view: false    # отключаем OSIV, чтобы не тащить сессию в контроллер
     properties:
       hibernate:
         format_sql: true
 
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 5000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000  # 10 минут (или сколько хочешь)
+      cache-null-values: false
+
   liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.xml
+    enabled: false
 
   # --- Kafka ---
   kafka:
@@ -38,9 +57,9 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       auto-offset-reset: earliest   # не пропустить события о завершении конвертации, отправленные пока сервис не работал
       properties:
-        spring.json.trusted.packages: "com.example.flowmanager.kafka.dto"
+        spring.json.trusted.packages: "*"
         spring.json.use.type.headers: false
-        spring.json.value.default.type: com.example.flowmanager.kafka.dto.ConversionResultEvent
+        spring.json.value.default.type: com.example.flowmanager.dto.ConversionResultEvent
 
     listener:
       ack-mode: manual_immediate   # ручной коммит оффсета — подтверждаем только после успешной обработки события и записи в БД
@@ -55,17 +74,19 @@ spring:
 app:
   kafka:
     topics:
-      file-uploaded: file-converter-input        # FlowManager -> ConversionService
-      file-converted: file-converter-output      # ConversionService -> FlowManager
+      request: file-converter-input
+      result: file-converter-output
+    consumer:
+      group-id: flowmanager-group
+
   minio:
     url: http://localhost:9000
     access-key: minioadmin
     secret-key: minioadmin
     bucket: files
-    secure: false
 
 server:
-  port: 8080
+  port: 8081
 
 springdoc:
   swagger-ui:

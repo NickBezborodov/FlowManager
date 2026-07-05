@@ -4,5 +4,5 @@ import com.example.flowmanager.enums.FileStatus;
 
 import java.util.UUID;
 
-public record ConversionResultEvent(UUID id, String resultPath, FileStatus status) {
+public record ConversionResultEvent(UUID fileId, String resultPath, FileStatus status) {
 }
