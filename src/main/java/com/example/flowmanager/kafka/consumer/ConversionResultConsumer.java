@@ -4,7 +4,6 @@ import com.example.flowmanager.dto.ConversionResultEvent;
 import com.example.flowmanager.service.FileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 

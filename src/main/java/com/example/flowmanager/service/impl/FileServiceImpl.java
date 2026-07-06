@@ -39,14 +39,12 @@ public class FileServiceImpl implements FileService {
     public FileUploadResponse upload(MultipartFile file, String login) {
         log.info("🚀 НАЧАЛО ЗАГРУЗКИ для пользователя: '{}'", login);
 
-        // === ШАГ 1: Проверка файла ===
         if (file == null || file.isEmpty()) {
             log.error("❌ Файл пустой или null");
             throw new IllegalArgumentException("File is empty");
         }
         log.info("✅ Файл получен: {}, размер: {} байт", file.getOriginalFilename(), file.getSize());
 
-        // === ШАГ 2: Получение подписки ===
         SubscriptionDto subscription;
         try {
             log.info("📡 Запрос подписки для логина: '{}'", login);
@@ -58,7 +56,6 @@ public class FileServiceImpl implements FileService {
             throw new RuntimeException("Не удалось проверить подписку для пользователя: " + login, e);
         }
 
-        // === ШАГ 3: Проверка размера ===
         long maxSize = "PAID".equals(subscription.type())
                 ? Long.MAX_VALUE
                 : 100L * 1024 * 1024;
@@ -72,11 +69,9 @@ public class FileServiceImpl implements FileService {
         }
         log.info("✅ Размер файла в пределах лимита");
 
-        // === ШАГ 4: Определение формата ===
         String format = extractFormat(file.getOriginalFilename());
         log.info("📄 Формат файла: {}", format);
 
-        // === ШАГ 5: Чтение содержимого ===
         byte[] content;
         try {
             content = file.getBytes();
@@ -86,7 +81,6 @@ public class FileServiceImpl implements FileService {
             throw new FileStorageException("Failed to read file", e);
         }
 
-        // === ШАГ 6: Загрузка в MinIO ===
         String path;
         try {
             path = minioService.uploadFile(file.getOriginalFilename(), content);
@@ -96,7 +90,6 @@ public class FileServiceImpl implements FileService {
             throw new FileStorageException("Failed to upload file to MinIO", e);
         }
 
-        // === ШАГ 7: Сохранение в БД ===
         FileRecord record = new FileRecord();
         record.setOriginalPath(path);
         record.setConvertedPath(null);
@@ -115,7 +108,6 @@ public class FileServiceImpl implements FileService {
             throw new FileStorageException("Failed to save file record", e);
         }
 
-        // === ШАГ 8: Отправка в Kafka (через Outbox) ===
         try {
             ConversionRequestEvent event = new ConversionRequestEvent(savedRecord.getId(), path, format);
             String payload = objectMapper.writeValueAsString(event);

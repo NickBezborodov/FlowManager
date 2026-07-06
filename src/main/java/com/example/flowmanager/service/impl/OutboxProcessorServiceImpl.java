@@ -41,7 +41,6 @@ public class OutboxProcessorServiceImpl implements OutboxProcessorService {
 
             producer.sendMessage(requestEvent);
 
-            // 4.3. Успех → статус SENT
             event.setStatus(OutboxStatus.SENT);
             event.setUpdatedAt(LocalDateTime.now());
             outboxRepository.save(event);
