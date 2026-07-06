@@ -1,11 +1,10 @@
 package com.example.flowmanager.service.impl;
 
 import com.example.flowmanager.dto.SubscriptionDto;
-import com.example.flowmanager.client.SubscriptionFeignClient;
+import com.example.flowmanager.client.SubscriptionClient;
 import com.example.flowmanager.service.SubscriptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
@@ -14,7 +13,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class SubscriptionServiceImpl implements SubscriptionService {
 
-    private final SubscriptionFeignClient feignClient;
+    private final SubscriptionClient feignClient;
 
     public SubscriptionDto getSubscription(String login) {
         ResponseEntity<SubscriptionDto> response = feignClient.getSubscription(login);

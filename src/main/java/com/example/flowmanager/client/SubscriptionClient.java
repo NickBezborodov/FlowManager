@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 @FeignClient(name = "subscription-service", url = "http://localhost:8090")
-public interface SubscriptionFeignClient {
+public interface SubscriptionClient {
 
     @GetMapping("/api/v1/subscriptions/{login}")
     ResponseEntity<SubscriptionDto> getSubscription(@PathVariable("login") String login);
