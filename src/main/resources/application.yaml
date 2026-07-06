@@ -2,6 +2,10 @@ spring:
   main:
     allow-circular-references: true
 
+  cloud:
+    compatibility-verifier:
+      enabled: false
+
   application:
     name: flowmanager
 
@@ -74,6 +78,7 @@ spring:
 app:
   kafka:
     topics:
+      subscription-changed: subscription-changed
       request: file-converter-input
       result: file-converter-output
     consumer:

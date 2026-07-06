@@ -23,42 +23,80 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class FileServiceImpl implements FileService {
+
     private final FileRecordRepository fileRecordRepository;
     private final MinioService minioService;
     private final ObjectMapper objectMapper;
     private final OutboxEventRepository outboxEventRepository;
     private final SubscriptionService subscriptionService;
 
-    @Transactional
     @Override
+    @Transactional
     public FileUploadResponse upload(MultipartFile file, String login) {
+        log.info("🚀 НАЧАЛО ЗАГРУЗКИ для пользователя: '{}'", login);
+
+        // === ШАГ 1: Проверка файла ===
         if (file == null || file.isEmpty()) {
+            log.error("❌ Файл пустой или null");
             throw new IllegalArgumentException("File is empty");
         }
+        log.info("✅ Файл получен: {}, размер: {} байт", file.getOriginalFilename(), file.getSize());
 
-        SubscriptionDto subscription = subscriptionService.getSubscription(login);
+        // === ШАГ 2: Получение подписки ===
+        SubscriptionDto subscription;
+        try {
+            log.info("📡 Запрос подписки для логина: '{}'", login);
+            subscription = subscriptionService.getSubscription(login);
+            log.info("✅ Подписка получена: type={}, expirationDate={}",
+                    subscription.type(), subscription.expirationDate());
+        } catch (Exception e) {
+            log.error("❌ Ошибка при получении подписки: {}", e.getMessage(), e);
+            throw new RuntimeException("Не удалось проверить подписку для пользователя: " + login, e);
+        }
+
+        // === ШАГ 3: Проверка размера ===
         long maxSize = "PAID".equals(subscription.type())
                 ? Long.MAX_VALUE
-                : 100L * 1024 * 1024; // ← 100 мб
+                : 100L * 1024 * 1024;
+        log.info("📏 Максимальный размер: {} байт", maxSize);
 
-        if (file.isEmpty()) {
-            throw new IllegalArgumentException("File is empty");
+        if (file.getSize() > maxSize) {
+            log.error("❌ Файл слишком большой: {} байт, лимит: {} байт", file.getSize(), maxSize);
+            throw new IllegalArgumentException(
+                    String.format("File size %d bytes exceeds limit %d bytes", file.getSize(), maxSize)
+            );
         }
+        log.info("✅ Размер файла в пределах лимита");
 
+        // === ШАГ 4: Определение формата ===
         String format = extractFormat(file.getOriginalFilename());
+        log.info("📄 Формат файла: {}", format);
 
+        // === ШАГ 5: Чтение содержимого ===
         byte[] content;
         try {
             content = file.getBytes();
+            log.info("📦 Содержимое файла прочитано, размер: {} байт", content.length);
         } catch (IOException e) {
+            log.error("❌ Ошибка чтения файла", e);
             throw new FileStorageException("Failed to read file", e);
         }
-        String path = minioService.uploadFile(file.getOriginalFilename(), content);
 
+        // === ШАГ 6: Загрузка в MinIO ===
+        String path;
+        try {
+            path = minioService.uploadFile(file.getOriginalFilename(), content);
+            log.info("📁 Файл загружен в MinIO: {}", path);
+        } catch (Exception e) {
+            log.error("❌ Ошибка загрузки в MinIO", e);
+            throw new FileStorageException("Failed to upload file to MinIO", e);
+        }
+
+        // === ШАГ 7: Сохранение в БД ===
         FileRecord record = new FileRecord();
         record.setOriginalPath(path);
         record.setConvertedPath(null);
@@ -68,13 +106,20 @@ public class FileServiceImpl implements FileService {
         record.setSize(file.getSize());
         record.setUpdatedAt(LocalDateTime.now());
 
-        FileRecord savedRecord = fileRecordRepository.save(record);
+        FileRecord savedRecord;
+        try {
+            savedRecord = fileRecordRepository.save(record);
+            log.info("💾 Запись сохранена в БД: id={}", savedRecord.getId());
+        } catch (Exception e) {
+            log.error("❌ Ошибка сохранения в БД", e);
+            throw new FileStorageException("Failed to save file record", e);
+        }
 
+        // === ШАГ 8: Отправка в Kafka (через Outbox) ===
         try {
             ConversionRequestEvent event = new ConversionRequestEvent(savedRecord.getId(), path, format);
             String payload = objectMapper.writeValueAsString(event);
-
-            log.info("📤 Sending payload to Kafka: {}", payload);
+            log.info("📤 Событие для Kafka: {}", payload);
 
             OutboxEvent outboxEvent = new OutboxEvent();
             outboxEvent.setAggregateId(savedRecord.getId());
@@ -85,31 +130,34 @@ public class FileServiceImpl implements FileService {
             outboxEvent.setRetryCount(0);
 
             outboxEventRepository.save(outboxEvent);
-            log.info("Outbox event saved for file: {}", savedRecord.getId());
+            log.info("📨 Outbox событие сохранено: {}", savedRecord.getId());
 
         } catch (Exception e) {
-            log.error("Failed to save outbox event", e);
-            throw new FileStorageException("Failed to queue file", e);
+            log.error("❌ Ошибка сохранения Outbox события", e);
+            throw new FileStorageException("Failed to queue file for conversion", e);
         }
 
+        log.info("✅ ЗАГРУЗКА ЗАВЕРШЕНА УСПЕШНО для пользователя: {}", login);
         return new FileUploadResponse(savedRecord.getId(), savedRecord.getStatus());
     }
 
-
     private String extractFormat(String fileName) {
         if (fileName == null || !fileName.contains(".")) {
+            log.error("❌ Не удалось определить формат файла: {}", fileName);
             throw new FileStorageException("Cannot determine file format", null);
         }
-        return fileName.substring(fileName.lastIndexOf('.') + 1);
+        String format = fileName.substring(fileName.lastIndexOf('.') + 1);
+        log.info("📄 Формат файла: {}", format);
+        return format;
     }
 
     @Override
     @Transactional(readOnly = true)
     public FileStatusResponse getStatus(UUID id) {
+        log.info("🔍 Запрос статуса для файла: {}", id);
         try {
             FileRecord record = fileRecordRepository.findById(id)
                     .orElseThrow(() -> new FileNotFoundException("File not found with id: " + id));
-
             return new FileStatusResponse(
                     record.getId(),
                     record.getStatus(),
@@ -117,46 +165,53 @@ public class FileServiceImpl implements FileService {
                     record.getCreatedAt()
             );
         } catch (Exception e) {
-            throw new FileNotFoundException("Failed to get file status for id: " + id, e);
+            log.error("❌ Ошибка при получении статуса", e);
+            throw e;
         }
     }
 
     @Override
     public byte[] getFile(UUID id) {
+        log.info("📥 Запрос файла: {}", id);
         try {
             FileRecord record = fileRecordRepository.findById(id)
                     .orElseThrow(() -> new FileNotFoundException("File not found with id: " + id));
-
-            String originalPath = record.getOriginalPath();
-
-            return minioService.downloadFile(originalPath);
+            byte[] data = minioService.downloadFile(record.getOriginalPath());
+            log.info("✅ Файл загружен из MinIO, размер: {} байт", data.length);
+            return data;
         } catch (Exception e) {
+            log.error("❌ Ошибка при загрузке файла", e);
             throw new FileNotFoundException("Failed to get file status for id: " + id, e);
         }
     }
 
     @Override
     public void handleConversionResult(ConversionResultEvent event) {
-        // 1. Проверяем fileId
+        log.info("📩 Получен результат конвертации: {}", event);
         if (event.fileId() == null) {
-            log.error("❌ ConversionResultEvent with null fileId: {}", event);
-            return; // или throw, но лучше просто логировать
+            log.error("❌ ConversionResultEvent с null fileId: {}", event);
+            return;
         }
 
-        // 2. Ищем файл
-        FileRecord record = fileRecordRepository.findById(event.fileId())
-                .orElseThrow(() -> new FileNotFoundException("File not found: " + event.fileId()));
+        try {
+            FileRecord record = fileRecordRepository.findById(event.fileId())
+                    .orElseThrow(() -> new FileNotFoundException("File not found: " + event.fileId()));
 
-        // 3. Обновляем статус
-        if (event.status() == FileStatus.SUCCESS) {
-            record.setStatus(FileStatus.SUCCESS);
-            record.setConvertedPath(event.resultPath());
-        } else {
-            record.setStatus(FileStatus.ERROR);
+            if (event.status() == FileStatus.SUCCESS) {
+                record.setStatus(FileStatus.SUCCESS);
+                record.setConvertedPath(event.resultPath());
+                log.info("✅ Файл {} сконвертирован успешно", event.fileId());
+            } else {
+                record.setStatus(FileStatus.ERROR);
+                log.error("❌ Ошибка конвертации файла {}", event.fileId());
+            }
+            record.setUpdatedAt(LocalDateTime.now());
+            fileRecordRepository.save(record);
+            log.info("💾 Статус файла {} обновлён", event.fileId());
+
+        } catch (Exception e) {
+            log.error("❌ Ошибка обработки результата конвертации", e);
+            throw e;
         }
-        record.setUpdatedAt(LocalDateTime.now());
-
-        // 4. Сохраняем
-        fileRecordRepository.save(record);
     }
 }

@@ -6,6 +6,7 @@ import com.example.flowmanager.service.SubscriptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -13,12 +14,24 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class SubscriptionServiceImpl implements SubscriptionService {
 
-    private final SubscriptionFeignClient subscriptionFeignClient;
+    private final SubscriptionFeignClient feignClient;
 
-    @Override
-    @Cacheable(value = "subscriptions", key = "#login", unless = "#result == null")
     public SubscriptionDto getSubscription(String login) {
-        log.info("Запрос подписки через REST для логина: {}", login);
-        return subscriptionFeignClient.getSubscription(login);
+        ResponseEntity<SubscriptionDto> response = feignClient.getSubscription(login);
+
+        if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+            return response.getBody();
+        }
+
+        if (response.getStatusCode().is4xxClientError()) {
+            return createDefaultSubscription(login);
+        }
+
+        throw new RuntimeException("Не удалось проверить подписку: " + response.getStatusCode());
+    }
+
+    private SubscriptionDto createDefaultSubscription(String login) {
+        ResponseEntity<SubscriptionDto> created = feignClient.createSubscription(login, "FREE");
+        return created.getBody();
     }
 }
