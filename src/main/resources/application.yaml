@@ -84,6 +84,10 @@ app:
     consumer:
       group-id: flowmanager-group
 
+  task:
+    delay: 5000
+    retry-delay: 60000
+
   minio:
     url: http://localhost:9000
     access-key: minioadmin

@@ -28,7 +28,7 @@ public class OutboxSchedulerJob {
     private static final int NEW_EVENTS_DELAY_SECONDS = 1;
     private static final int RETRY_DELAY_MINUTES = 3;
 
-    @Scheduled(fixedDelay = 5000)
+    @Scheduled(fixedDelayString = "${app.task.delay}")
     @SchedulerLock(
             name = "processNewEvents",
             lockAtMostFor = "30s",
@@ -57,7 +57,7 @@ public class OutboxSchedulerJob {
         }
     }
 
-    @Scheduled(fixedDelay = 60000)
+    @Scheduled(fixedDelayString = "${app.task.retry-delay}")
     @SchedulerLock(
             name = "retryFailedEvents",
             lockAtMostFor = "2m",
